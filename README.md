@@ -1,13 +1,40 @@
-# IYKYK Task 0 - Camera & Smart Face Collage
+# IYKYK - Task 0
 
-An Android application built with Jetpack Compose, CameraX, ML Kit, and TensorFlow Lite (MobileFaceNet). The app records video up to 20 seconds, samples frames in real time, detects faces, aligns facial landmarks, generates 192-dimensional facial embeddings, clusters unique human identities using cosine similarity, selects optimal portrait representatives, and synthesizes a high-resolution collage.
+The app records clips up to 20 seconds, tracks unique human faces in real time, filters edge-clipped faces, computes deep feature embeddings, clusters unique individuals using cosine distance, and renders a rounded face collage.
+
+---
+
+## App Previews
+
+<table>
+  <tr>
+    <td width="33.33%" align="center">
+      <img src="./docs/screenshots/screenshot_permission.png" width="100%" alt="Empty State" />
+      <br/><b>Empty State (0 Faces)</b>
+    </td>
+    <td width="33.33%" align="center">
+      <img src="./docs/screenshots/screenshot_camera.png" width="100%" alt="Face Collage Grid" />
+      <br/><b>Collage Output (Clustered Identities)</b>
+    </td>
+    <td width="33.33%" align="center">
+      <img src="./docs/screenshots/screenshot_collage.png" width="100%" alt="Camera Recording Screen" />
+      <br/><b>Camera Recording Screen</b>
+    </td>
+  </tr>
+</table>
+
+---
+
+## Design Reference (Figma)
+
+![Figma Design Mockups](./figmafile.png)
 
 ---
 
 ## Architecture Overview
 
 The system operates across two coordinated pipelines sharing a unified ML clustering engine:
-1. **Live Capture & Real-Time Detection**: Records 16:9 video synchronized with physical display orientation, samples frames every 250ms, detects faces using ML Kit Face Detection, applies lenient edge clipping validation, and tracks face samples.
+1. **Live Capture & Real-Time Detection**: Records 16:9 video synchronized with physical display orientation, samples frames every 250ms, detects faces using ML Kit Face Detection, applies a 20px edge clipping boundary filter, and tracks face samples.
 2. **Batch ML Processing & Identity Clustering**: Runs post-recording in the background. Faces are aligned horizontally using eye landmarks (112x112), embedded into 192D L2-normalized vectors via MobileFaceNet TFLite, clustered using the shared `IdentityClustering` engine at cosine threshold `0.65`, evaluated for representative portraits, and rendered into a collage.
 3. **In-App Pure Black Debug Inspector**: Provides an end-to-end visual breakdown of sampled frames, edge clipping evaluation, preprocessed cuts, clustering assignments, and synthesized collage outputs.
 
@@ -21,7 +48,7 @@ flowchart LR
         direction LR
         Cam[CameraX Stream] --> Rec[Video Recording<br/>Up to 20s]
         Cam -->|Every 250ms| MLKit[ML Kit FaceDetector<br/>Accurate Mode]
-        MLKit --> EdgeClip{Lenient Edge Clip<br/>Area Missing > 75%}
+        MLKit --> EdgeClip{Edge Clipping Filter<br/>Margin <= 20px}
         EdgeClip -->|Valid| Crop[Face Crop]
     end
 
@@ -86,7 +113,7 @@ The ML pipeline settings are centralized in:
 | :--- | :--- | :--- | :--- |
 | `enableClustering` | `Boolean` | `true` | When true, groups embeddings into unique identities using cosine similarity. |
 | `enableFaceAlignment` | `Boolean` | `true` | Rotates face to align eye landmarks horizontally at 112x112 resolution. |
-| `enableEdgeClippingFilter` | `Boolean` | `true` | Validates face boundaries, rejecting faces exceeding the missing area threshold. |
+| `enableEdgeClippingFilter` | `Boolean` | `true` | Validates face boundaries, rejecting faces within 20px of any frame border. |
 | `enableFrontalityFilter` | `Boolean` | `false` | When enabled, discards extreme head angles. |
 | `enableBlurFilter` | `Boolean` | `false` | When enabled, evaluates Laplacian variance against blur threshold. |
 | `enableSharpnessFilter` | `Boolean` | `false` | When enabled, filters crops via Sobel edge gradient scoring. |
@@ -98,7 +125,7 @@ The ML pipeline settings are centralized in:
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `similarityThreshold` | `Float` | `0.65f` | Cosine similarity threshold for identity grouping. |
-| `maxMissingFaceRatio` | `Float` | `0.75f` | Lenient edge clipping: rejects face only if >75% of bounding area is truncated. |
+| `edgeClippingMarginPx` | `Int` | `20` | Edge clipping margin: rejects face if within 20px of frame border. |
 | `embeddingDimension` | `Int` | `192` | Output vector size produced by MobileFaceNet. |
 | `targetFrameIntervalMs` | `Long` | `250L` | Real-time analysis frame sampling interval (4 FPS). |
 
