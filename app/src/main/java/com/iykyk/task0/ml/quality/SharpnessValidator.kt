@@ -4,12 +4,13 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.mlkit.vision.face.Face
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * Sobel Edge Sharpness Validator.
  */
 class SharpnessValidator(
-    private val minSharpness: Float = 4000f
+    private val minSharpness: Float = 600f
 ) : FaceValidator {
     private var lastReason = ""
 
@@ -28,10 +29,12 @@ class SharpnessValidator(
     fun calculateSobelSharpness(bitmap: Bitmap): Float {
         val width = bitmap.width
         val height = bitmap.height
-        if (width < 3 || height < 3) return 0f
+        if (width < 4 || height < 4) return 0f
 
         val step = 2
-        var totalGradient = 0.0
+        var totalMag = 0.0
+        var count = 0
+
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
@@ -50,11 +53,12 @@ class SharpnessValidator(
 
                 val gx = (p02 + 2.0 * p12 + p22) - (p00 + 2.0 * p10 + p20)
                 val gy = (p20 + 2.0 * p21 + p22) - (p00 + 2.0 * p01 + p02)
-                totalGradient += (abs(gx) + abs(gy))
+                totalMag += sqrt(gx * gx + gy * gy)
+                count++
             }
         }
 
-        return (totalGradient / 10.0).toFloat()
+        return if (count > 0) (totalMag / count).toFloat() * 100f else 0f
     }
 
     private fun cropFaceRegion(bitmap: Bitmap, face: Face): Bitmap {

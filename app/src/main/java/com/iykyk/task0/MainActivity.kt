@@ -31,6 +31,17 @@ import com.iykyk.task0.ui.theme.Iykyktask0Theme
 import com.iykyk.task0.utils.rememberCameraPermissionState
 import kotlinx.coroutines.launch
 import java.io.File
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import com.iykyk.task0.debug.DebugScreen
 
 /**
  * Top-level application destinations for navigation flow.
@@ -38,7 +49,8 @@ import java.io.File
 enum class AppDestination {
     CAMERA,
     PROCESSING,
-    COLLAGE
+    COLLAGE,
+    DEBUG
 }
 
 /**
@@ -140,6 +152,37 @@ fun AppRoot(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxSize()
                         )
                     }
+                    AppDestination.DEBUG -> {
+                        DebugScreen(
+                            onBack = { currentDestination = AppDestination.CAMERA },
+                            onProceedToCollage = { collageFile, reps ->
+                                generatedCollageFile = collageFile
+                                representativeBitmaps = reps
+                                currentDestination = AppDestination.COLLAGE
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Small black icon at the bottom to access debug screen
+            if (currentDestination == AppDestination.CAMERA || currentDestination == AppDestination.COLLAGE) {
+                IconButton(
+                    onClick = { currentDestination = AppDestination.DEBUG },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp, end = 16.dp)
+                        .size(38.dp)
+                        .background(Color(0xFF18181B).copy(alpha = 0.90f), shape = CircleShape)
+                        .border(1.dp, Color(0xFF3F3F46).copy(alpha = 0.60f), shape = CircleShape)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_debug_inspect),
+                        contentDescription = "Debug Inspector",
+                        tint = Color(0xFFE2E8F0),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }

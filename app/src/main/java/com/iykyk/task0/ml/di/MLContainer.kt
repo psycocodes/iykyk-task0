@@ -16,6 +16,7 @@ import com.iykyk.task0.ml.embedding.TFLiteEmbeddingModel
 import com.iykyk.task0.ml.processing.Detector
 import com.iykyk.task0.ml.processing.FaceProcessingPipeline
 import com.iykyk.task0.ml.processing.Processor
+import com.iykyk.task0.ml.quality.EdgeClippingValidator
 import com.iykyk.task0.ml.quality.FaceSizeValidator
 import com.iykyk.task0.ml.quality.FaceValidator
 import com.iykyk.task0.ml.quality.FrontialityValidator
@@ -51,6 +52,9 @@ class MLContainer(private val context: Context) {
     val qualityFilter: FaceQualityFilter by lazy {
         val validatorList = mutableListOf<FaceValidator>()
 
+        if (config.enableEdgeClippingFilter) {
+            validatorList.add(EdgeClippingValidator(marginPx = config.edgeClippingMarginPx))
+        }
         if (config.enableSizeFilter) {
             validatorList.add(FaceSizeValidator(minSize = config.minFaceSize))
         }
@@ -106,6 +110,7 @@ class MLContainer(private val context: Context) {
             embeddingGenerator = embeddingGenerator,
             clusteringEngine = clusteringEngine,
             representativeSelector = representativeSelector,
+            qualityFilter = qualityFilter,
             config = config
         )
     }

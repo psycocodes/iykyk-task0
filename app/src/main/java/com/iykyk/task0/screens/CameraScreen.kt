@@ -1,5 +1,10 @@
 package com.iykyk.task0.screens
 
+import android.content.Context
+
+import android.net.Uri
+import com.iykyk.task0.debug.DebugSessionHolder
+
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -7,7 +12,13 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.util.Log
+import android.view.OrientationEventListener
+import android.hardware.display.DisplayManager
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
+import android.view.WindowManager
+import androidx.camera.core.AspectRatio
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
@@ -139,6 +150,7 @@ fun CameraScreen(
 
     val videoCapture = remember {
         val recorder = Recorder.Builder()
+            .setAspectRatio(AspectRatio.RATIO_16_9)
             .setQualitySelector(
                 QualitySelector.from(
                     Quality.HIGHEST,
@@ -164,17 +176,38 @@ fun CameraScreen(
             }
     }
 
-    val displayRotation = if (isLandscape) Surface.ROTATION_90 else Surface.ROTATION_0
-    LaunchedEffect(displayRotation) {
+    val displayManager = remember(context) {
+        context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+    }
+
+    fun syncRotationToDisplay() {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        val rotation = wm?.defaultDisplay?.rotation ?: Surface.ROTATION_0
         try {
-            preview.targetRotation = displayRotation
-            imageAnalysis.targetRotation = displayRotation
+            imageAnalysis.targetRotation = rotation
             if (!isRecording) {
-                videoCapture.targetRotation = displayRotation
+                videoCapture.targetRotation = rotation
             }
-        } catch (e: Exception) {
-            Log.d(TAG, "Target rotation update: ${e.message}")
+        } catch (_: Exception) {}
+    }
+
+    DisposableEffect(displayManager) {
+        val listener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {}
+            override fun onDisplayRemoved(displayId: Int) {}
+            override fun onDisplayChanged(displayId: Int) {
+                syncRotationToDisplay()
+            }
         }
+        displayManager?.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
+        syncRotationToDisplay()
+        onDispose {
+            displayManager?.unregisterDisplayListener(listener)
+        }
+    }
+
+    LaunchedEffect(configuration.orientation) {
+        syncRotationToDisplay()
     }
 
     LaunchedEffect(lensFacing) {
@@ -412,6 +445,7 @@ fun CameraScreen(
 
                             isRecording = true
                             elapsedSeconds = 0
+                            DebugSessionHolder.startLiveRecordingSession()
                             scope.launch { detector.clear() }
                             videoRecorder.startRecording(
                                 videoCapture = videoCapture,
@@ -424,6 +458,8 @@ fun CameraScreen(
                                     detectedFaceBoxes = emptyList()
                                     isDetectingFaces = false
                                     if (file != null) {
+                                        DebugSessionHolder.lastRecordedVideoFile = file
+                                        DebugSessionHolder.lastRecordedVideoUri = Uri.fromFile(file)
                                         onRecordingCompleted()
                                     } else if (error != null) {
                                         Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
@@ -502,6 +538,7 @@ fun CameraScreen(
 
                             isRecording = true
                             elapsedSeconds = 0
+                            DebugSessionHolder.startLiveRecordingSession()
                             scope.launch { detector.clear() }
                             videoRecorder.startRecording(
                                 videoCapture = videoCapture,
@@ -514,6 +551,8 @@ fun CameraScreen(
                                     detectedFaceBoxes = emptyList()
                                     isDetectingFaces = false
                                     if (file != null) {
+                                        DebugSessionHolder.lastRecordedVideoFile = file
+                                        DebugSessionHolder.lastRecordedVideoUri = Uri.fromFile(file)
                                         onRecordingCompleted()
                                     } else if (error != null) {
                                         Toast.makeText(context, error, Toast.LENGTH_SHORT).show()

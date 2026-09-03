@@ -10,6 +10,8 @@ import com.iykyk.task0.ml.detection.FaceDetector
 import com.iykyk.task0.ml.detection.FaceQualityFilter
 import com.iykyk.task0.ml.models.FaceFrame
 import com.iykyk.task0.ml.models.FaceTrack
+import com.iykyk.task0.debug.DebugSessionHolder
+import com.iykyk.task0.ml.models.FaceQuality
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -71,39 +73,43 @@ class Detector(
         processedFrameCount++
         val detectedFaces = faceDetector.detectFaces(bitmap, rotationDegrees)
         if (detectedFaces.isEmpty()) {
+            DebugSessionHolder.recordEmptyLiveFrame(processedFrameCount, frameTimeMs, bitmap)
             return@withContext emptyList()
         }
 
         val qualityFaceFrames = mutableListOf<FaceFrame>()
+        val faceQualities = mutableListOf<Pair<Face, FaceQuality>>()
 
         for ((idx, face) in detectedFaces.withIndex()) {
             val quality = qualityFilter.filterQualityFaces(bitmap, face, bitmap.width, bitmap.height)
-            if (quality.isValid) {
-                val crop = cropSquarePortrait(bitmap, face.boundingBox)
-                val faceFrame = FaceFrame(frameTimeMs, crop, bitmap, face, quality)
-                qualityFaceFrames.add(faceFrame)
+            faceQualities.add(face to quality)
+            val crop = cropSquarePortrait(bitmap, face.boundingBox)
+            val faceFrame = FaceFrame(frameTimeMs, crop, bitmap, face, quality)
+            qualityFaceFrames.add(faceFrame)
 
-                if (!config.enableTracking) {
-                    mutex.withLock {
-                        directFaceSamples.add(
-                            BestFaceSample(
-                                faceCrop = crop,
-                                fullBitmap = bitmap,
-                                face = face,
-                                sharpnessScore = quality.sharpnessScore
-                            )
+            if (!config.enableTracking) {
+                // Collect all detected face cuts into directFaceSamples; preprocessing in Processor filters edge clipping, blur, etc.
+                mutex.withLock {
+                    directFaceSamples.add(
+                        BestFaceSample(
+                            faceCrop = crop,
+                            fullBitmap = bitmap,
+                            face = face,
+                            sharpnessScore = quality.sharpnessScore
                         )
-                    }
+                    )
                 }
+            }
 
+            if (quality.isValid) {
                 Log.d(
                     TAG,
-                    "[Frame #$processedFrameCount] Face #$idx PASSED quality: yaw=${"%.1f".format(quality.yaw)}°, pitch=${"%.1f".format(quality.pitch)}°, sharpness=${"%.1f".format(quality.sharpnessScore)}, blur=${"%.1f".format(quality.blurScore)}, box=${face.boundingBox}"
+                    "[Frame #$processedFrameCount] Face #$idx PASSED: yaw=${"%.1f".format(quality.yaw)}°, pitch=${"%.1f".format(quality.pitch)}°, sharpness=${"%.1f".format(quality.sharpnessScore)}, blur=${"%.1f".format(quality.blurScore)}, box=${face.boundingBox}"
                 )
             } else {
                 Log.w(
                     TAG,
-                    "[Frame #$processedFrameCount] Face #$idx REJECTED: reason='${quality.failureReason}', yaw=${"%.1f".format(face.headEulerAngleY)}°, pitch=${"%.1f".format(face.headEulerAngleX)}°, box=${face.boundingBox}"
+                    "[Frame #$processedFrameCount] Face #$idx flagged for preprocessing filter: reason='${quality.failureReason}', box=${face.boundingBox}"
                 )
             }
         }
@@ -113,6 +119,14 @@ class Detector(
                 linkFacesAcrossFrames(qualityFaceFrames)
             }
         }
+
+        DebugSessionHolder.recordLiveFrame(
+            frameIndex = processedFrameCount,
+            timestampMs = frameTimeMs,
+            bitmap = bitmap,
+            detectedFaces = faceQualities,
+            cropExtractor = ::cropSquarePortrait
+        )
 
         return@withContext detectedFaces
     }

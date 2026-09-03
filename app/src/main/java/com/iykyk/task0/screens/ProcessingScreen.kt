@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.iykyk.task0.R
 import com.iykyk.task0.ml.models.ProcessingState
+import com.iykyk.task0.debug.DebugSessionHolder
 import com.iykyk.task0.ml.processing.Detector
 import com.iykyk.task0.ml.processing.Processor
 import com.iykyk.task0.ui.components.CollageHeader
@@ -81,6 +82,19 @@ fun ProcessingScreen(
 
             val output = processor.processFaces(detectedFaces)
             val collageFile = CollageGenerator.generateAndExportCollage(context, output.representativeBitmaps)
+            val collageBitmap = collageFile?.let {
+                try {
+                    android.graphics.BitmapFactory.decodeFile(it.absolutePath)
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: com.iykyk.task0.debug.ml.DebugCollageMaker.generateCollage(output.representativeBitmaps)
+
+            DebugSessionHolder.completeLiveProcessing(
+                clusters = output.clusters,
+                representatives = output.representativeBitmaps,
+                collage = collageBitmap
+            )
 
             withContext(Dispatchers.Main) {
                 onProcessingFinished(collageFile, output.representativeBitmaps, output.wasCancelled)

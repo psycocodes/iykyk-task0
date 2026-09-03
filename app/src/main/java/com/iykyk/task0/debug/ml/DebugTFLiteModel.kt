@@ -1,9 +1,10 @@
-package com.iykyk.task0.ml.embedding
+package com.iykyk.task0.debug.ml
 
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import com.iykyk.task0.ml.clustering.EmbeddingMath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -11,20 +12,14 @@ import kotlinx.coroutines.withContext
 import org.tensorflow.lite.Interpreter
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.sqrt
 
-private const val TAG = "TFLiteEmbeddingModel"
+private const val TAG = "DebugTFLiteModel"
 
-/**
- * TensorFlow Lite inference engine running MobileFaceNet for 192D facial embedding generation.
- *
- * Preprocesses 112x112 pixel inputs with standard normalization and applies L2 normalization
- * to output embedding feature vectors. Synchronized with a Mutex for concurrency safety.
- */
-class TFLiteEmbeddingModel(private val context: Context) : EmbeddingModel {
+class DebugTFLiteModel(context: Context) {
     private var interpreter: Interpreter? = null
     private val inferenceMutex = Mutex()
-    private var embeddingDim = 192
+    var embeddingDim = 192
+        private set
 
     init {
         try {
@@ -50,10 +45,7 @@ class TFLiteEmbeddingModel(private val context: Context) : EmbeddingModel {
         }
     }
 
-    /**
-     * Executes TFLite model inference on a normalized 112x112 face crop, returning an L2-normalized vector.
-     */
-    override suspend fun generateEmbedding(bitmap: Bitmap): FloatArray? = withContext(Dispatchers.Default) {
+    suspend fun generateEmbedding(bitmap: Bitmap): FloatArray? = withContext(Dispatchers.Default) {
         inferenceMutex.withLock {
             val activeInterpreter = interpreter ?: return@withLock null
             return@withLock try {
@@ -67,9 +59,9 @@ class TFLiteEmbeddingModel(private val context: Context) : EmbeddingModel {
                 val outputArray = Array(1) { FloatArray(embeddingDim) }
                 activeInterpreter.run(inputBuffer, outputArray)
 
-                l2Normalize(outputArray[0])
+                EmbeddingMath.l2Normalize(outputArray[0])
             } catch (e: Exception) {
-                Log.e(TAG, "Embedding inference error: ${e.message}", e)
+                Log.e(TAG, "Inference error: ${e.message}", e)
                 null
             }
         }
@@ -95,29 +87,16 @@ class TFLiteEmbeddingModel(private val context: Context) : EmbeddingModel {
         return buffer
     }
 
-    private fun l2Normalize(vector: FloatArray): FloatArray {
-        var sumSquares = 0.0
-        for (v in vector) {
-            val valid = if (v.isNaN() || v.isInfinite()) 0.0 else v.toDouble()
-            sumSquares += (valid * valid)
-        }
-        val norm = sqrt(sumSquares).toFloat().coerceAtLeast(1e-10f)
-        for (i in vector.indices) {
-            val valid = if (vector[i].isNaN() || vector[i].isInfinite()) 0f else vector[i]
-            vector[i] = valid / norm
-        }
-        return vector
-    }
-
-    /**
-     * Releases TensorFlow Lite native interpreter and memory allocations.
-     */
-    override fun close() {
+    fun close() {
         try {
             interpreter?.close()
             interpreter = null
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing interpreter: ${e.message}")
-        }
+        } catch (_: Exception) {}
+    }
+
+    companion object {
+        fun cosineSimilarity(a: FloatArray, b: FloatArray): Float = EmbeddingMath.cosineSimilarity(a, b)
+        fun computeCentroid(embeddings: List<FloatArray>): FloatArray = EmbeddingMath.computeCentroid(embeddings)
+        fun findMedoidIndex(embeddings: List<FloatArray>): Int = EmbeddingMath.findMedoidIndex(embeddings)
     }
 }

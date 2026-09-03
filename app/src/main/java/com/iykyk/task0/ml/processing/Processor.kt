@@ -5,6 +5,7 @@ import android.util.Log
 import com.iykyk.task0.ml.clustering.ClusteringEngine
 import com.iykyk.task0.ml.clustering.RepresentativeSelector
 import com.iykyk.task0.ml.config.MLPipelineConfig
+import com.iykyk.task0.ml.detection.FaceQualityFilter
 import com.iykyk.task0.ml.embedding.EmbeddingGenerator
 import com.iykyk.task0.ml.models.ClusterOutput
 import com.iykyk.task0.ml.models.ProcessingState
@@ -35,6 +36,7 @@ class Processor(
     private val embeddingGenerator: EmbeddingGenerator,
     private val clusteringEngine: ClusteringEngine,
     private val representativeSelector: RepresentativeSelector,
+    private val qualityFilter: FaceQualityFilter? = null,
     private val config: MLPipelineConfig = MLPipelineConfig(),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
@@ -79,11 +81,39 @@ class Processor(
             )
         }
 
+        // STEP 4: PREPROCESSING & QUALITY FILTERING (Edge clipping, Frontality, Blur, Sharpness)
+        val validSamples = if (qualityFilter != null) {
+            val list = mutableListOf<BestFaceSample>()
+            for ((idx, sample) in detectedSamples.withIndex()) {
+                val quality = qualityFilter.filterQualityFaces(
+                    sample.fullBitmap,
+                    sample.face,
+                    sample.fullBitmap.width,
+                    sample.fullBitmap.height
+                )
+                if (quality.isValid) {
+                    list.add(sample)
+                    Log.d(TAG, "  [Preprocess #$idx] Face PASSED: yaw=${"%.1f".format(quality.yaw)}°, sharpness=${"%.1f".format(quality.sharpnessScore)}, blur=${"%.1f".format(quality.blurScore)}")
+                } else {
+                    Log.w(TAG, "  [Preprocess #$idx] Face FILTERED OUT: reason='${quality.failureReason}'")
+                }
+            }
+            if (list.isNotEmpty()) list else {
+                Log.w(TAG, "All $total samples were filtered by quality validators! Falling back to raw samples.")
+                detectedSamples
+            }
+        } else {
+            detectedSamples
+        }
+
+        Log.i(TAG, "Processor: Preprocessing accepted ${validSamples.size}/$total candidates for embedding.")
+
         val embeddings = mutableListOf<Pair<Bitmap, FloatArray>>()
         var wasCancelled = false
+        val embedTotal = validSamples.size
 
         try {
-            for ((index, sample) in detectedSamples.withIndex()) {
+            for ((index, sample) in validSamples.withIndex()) {
                 if (currentJob?.isCancelled == true) {
                     wasCancelled = true
                     Log.w(TAG, "Processor: Processing job cancelled at sample #$index")
@@ -98,7 +128,7 @@ class Processor(
                     Log.w(TAG, "  [Embedding #$index]: FAILED to generate embedding for sample #$index!")
                 }
 
-                _processingProgress.value = ProcessingState.Embedding(index + 1, total)
+                _processingProgress.value = ProcessingState.Embedding(index + 1, embedTotal)
             }
 
             Log.i(TAG, "Processor: Completed embeddings (${embeddings.size}/$total succeeded). Starting clustering...")
