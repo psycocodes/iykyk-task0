@@ -33,103 +33,34 @@ The application is structured into two processing stages:
 
 ---
 
-## Processing Pipelines (Architecture Diagrams)
-
-### 1. End-to-End State Flow
-
-```mermaid
-stateDiagram-v2
-    [*] --> PermissionScreen : Launch App
-    PermissionScreen --> CameraScreen : Camera Permission Granted
-    PermissionScreen --> AppSettings : Denied Once ("Open Settings")
-    AppSettings --> PermissionScreen : Return to App
-
-    state CameraScreen {
-        [*] --> IdleState
-        IdleState --> RecordingState : Tap Record Button
-        RecordingState --> FinalizingState : Tap Stop or 20s Max
-    }
-
-    CameraScreen --> ProcessingScreen : Video Saved & Faces Sampled
-
-    state ProcessingScreen {
-        [*] --> ExtractTracks
-        ExtractTracks --> FaceAlignment
-        FaceAlignment --> TFLiteEmbeddings
-        TFLiteEmbeddings --> CosineClustering
-        CosineClustering --> RepresentativeSelection
-        RepresentativeSelection --> CollageGeneration
-    }
-
-    ProcessingScreen --> CollageScreen : Collage Generated / 0 Faces
-
-    state CollageScreen {
-        FacesFound --> SaveToGallery : Tap "Save"
-        FacesFound --> ShareSheet : Tap "Share"
-        FacesFound --> CameraScreen : Tap "Record Clip"
-        NoFaces --> CameraScreen : Tap "Record Clip"
-    }
-```
-
----
-
-### 2. Real-Time Detection & Centroid Tracking Pipeline
-
-```mermaid
-flowchart TD
-    A[CameraX ImageAnalysis Stream] -->|Every 250ms| B[Frame Upright Bitmap]
-    B --> C[ML Kit Face Detection]
-    C -->|Detected Faces| D{Quality Filters}
-
-    subgraph Quality Gates
-        D -->|Check Head Pose| E[Yaw <= 45°, Pitch <= 35°, Roll <= 35°]
-        E -->|Check Sharpness| F[Laplacian / Sobel Edge Filter]
-        F -->|Check Min Size| G[Bounding Box Size]
-    end
-
-    G -->|Passed Filter| H[Crop 1:1 Face Portrait]
-    H --> I[Temporal Centroid Tracker]
-
-    subgraph Centroid Linking
-        I --> J{Centroid Distance < 120px?}
-        J -->|Yes| K[Append to Existing FaceTrack]
-        J -->|No| L[Create New FaceTrack ID]
-        K --> M[Update Sharpest Face Sample]
-        L --> M
-    end
-
-    M --> N[(Tracked Faces Cache)]
-```
-
----
-
-### 3. Post-Recording Batch Processing & Clustering Pipeline
+## ML Diagrams
 
 ```mermaid
 flowchart LR
-    subgraph Step 1: Input
-        A[(Tracked Face Samples)]
+    subgraph LiveVideo ["1. Live Video Stream & Detection"]
+        direction LR
+        Cam[CameraX Stream] --> Vid[Video Recording<br/>Up to 20s]
+        Cam -->|Every 250ms| MLKit[ML Kit FaceDetector<br/>Real-Time Bounding Boxes]
+        MLKit --> Filter{Quality Filters<br/>Yaw, Pitch, Blur}
+        Filter -->|Valid| Crop[1:1 Square Face Crop]
+        Crop --> Track[Centroid Tracker<br/>or Direct Crops]
     end
 
-    subgraph Step 2: Alignment & Embeddings
-        A --> B[Face Landmark Aligner]
-        B --> C[Preprocess 112x112 Tensor]
-        C --> D[MobileFaceNet TFLite Model]
-        D --> E[L2-Normalized 512D Vector]
+    subgraph BatchML ["2. Batch ML Processing & Clustering"]
+        direction LR
+        Track --> Align[Face Aligner<br/>112x112 Tensor]
+        Align --> TFLite[MobileFaceNet TFLite<br/>192D L2-Normalized Vector]
+        TFLite --> Cluster[Cosine Similarity Clustering<br/>Threshold = 0.60]
     end
 
-    subgraph Step 3: Cosine Clustering
-        E --> F{Cosine Similarity >= 0.70?}
-        F -->|Yes| G[Merge into Identity Cluster & Recompute Centroid]
-        F -->|No| H[Create New Face Cluster]
+    subgraph Synthesis ["3. Smart Collage Synthesis"]
+        direction LR
+        Cluster --> Selector[Representative Selector<br/>Highest Quality Portrait]
+        Selector --> Canvas[Dynamic Collage Canvas<br/>22dp Outer / 10dp Inner Curves]
+        Canvas --> UI[CollageScreen UI<br/>Save to Gallery / Share Sheet]
     end
 
-    subgraph Step 4: Output Synthesis
-        G & H --> I[Quality-Based Representative Selector]
-        I --> J[Select Sharpest Prototypical Portrait]
-        J --> K[CollageGenerator Canvas]
-        K --> L[Export High-Res JPEG to Storage]
-    end
+    LiveVideo --> BatchML --> Synthesis
 ```
 
 ---
